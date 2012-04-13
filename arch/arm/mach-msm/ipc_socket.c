@@ -21,6 +21,10 @@
 #include <linux/gfp.h>
 #include <linux/msm_ipc.h>
 
+#ifdef CONFIG_ANDROID_PARANOID_NETWORK
+#include <linux/android_aid.h>
+#endif
+
 #include <asm/string.h>
 #include <asm/atomic.h>
 
@@ -35,6 +39,20 @@ static int sockets_enabled;
 static struct proto msm_ipc_proto;
 static const struct proto_ops msm_ipc_proto_ops;
 
+#ifdef CONFIG_ANDROID_PARANOID_NETWORK
+static inline int check_permissions(void)
+{
+	int rc = 0;
+	if (!current_euid() || in_egroup_p(AID_NET_RAW))
+		rc = 1;
+	return rc;
+}
+# else
+static inline int check_permissions(void)
+{
+	return 1;
+}
+#endif
 
 static struct sk_buff_head *msm_ipc_router_build_msg(unsigned int num_sect,
 					  struct iovec const *msg_sect,
@@ -170,6 +188,11 @@ static int msm_ipc_router_create(struct net *net,
 {
 	struct sock *sk;
 	struct msm_ipc_port *port_ptr;
+
+	if (!check_permissions()) {
+		pr_err("%s: Do not have permissions\n", __func__);
+		return -EPERM;
+	}
 
 	if (unlikely(protocol != 0)) {
 		pr_err("%s: Protocol not supported\n", __func__);
