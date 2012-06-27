@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,12 +26,19 @@
 #include <linux/slab.h>
 #include <linux/poll.h>
 #include <linux/uaccess.h>
+#include <linux/mutex.h>
 
 #include <asm-generic/poll.h>
 
 #include "ramdump.h"
 
 #define RAMDUMP_WAIT_MSECS	120000
+
+/*
+ * Head entry for linked list
+ */
+static LIST_HEAD(ramdump_list);
+static DEFINE_MUTEX(ramdump_mtx);
 
 struct ramdump_device {
 	char name[256];
@@ -46,6 +53,7 @@ struct ramdump_device {
 	wait_queue_head_t dump_wait_q;
 	int nsegments;
 	struct ramdump_segment *segments;
+	struct list_head list;
 };
 
 static int ramdump_open(struct inode *inode, struct file *filep)
@@ -115,7 +123,7 @@ static int ramdump_read(struct file *filep, char __user *buf, size_t count,
 
 	addr = offset_translate(*pos, rd_dev, &data_left);
 
-	
+	/* EOF check */
 	if (data_left == 0) {
 		pr_debug("Ramdump(%s): Ramdump complete. %lld bytes read.",
 			rd_dev->name, *pos);
@@ -185,11 +193,24 @@ void *create_ramdump_device(const char *dev_name)
 {
 	int ret;
 	struct ramdump_device *rd_dev;
+	char name[256];
 
 	if (!dev_name) {
 		pr_err("%s: Invalid device name.\n", __func__);
 		return NULL;
 	}
+
+	snprintf(name, ARRAY_SIZE(name), "ramdump_%s", dev_name);
+	mutex_lock(&ramdump_mtx);
+	list_for_each_entry(rd_dev, &ramdump_list, list) {
+		if (!strcmp(rd_dev->device.name, name)) {
+			mutex_unlock(&ramdump_mtx);
+			pr_warning("%s: already exist: %s",
+					__func__, name);
+			return (void *)rd_dev;
+		}
+	}
+	mutex_unlock(&ramdump_mtx);
 
 	rd_dev = kzalloc(sizeof(struct ramdump_device), GFP_KERNEL);
 
@@ -198,6 +219,7 @@ void *create_ramdump_device(const char *dev_name)
 			__func__);
 		return NULL;
 	}
+	INIT_LIST_HEAD(&rd_dev->list);
 
 	snprintf(rd_dev->name, ARRAY_SIZE(rd_dev->name), "ramdump_%s",
 		 dev_name);
@@ -218,6 +240,10 @@ void *create_ramdump_device(const char *dev_name)
 		kfree(rd_dev);
 		return NULL;
 	}
+
+	mutex_lock(&ramdump_mtx);
+	list_add(&rd_dev->list, &ramdump_list);
+	mutex_unlock(&ramdump_mtx);
 
 	return (void *)rd_dev;
 }
@@ -255,10 +281,10 @@ int do_ramdump(void *handle, struct ramdump_segment *segments,
 
 	INIT_COMPLETION(rd_dev->ramdump_complete);
 
-	
+	/* Tell userspace that the data is ready */
 	wake_up(&rd_dev->dump_wait_q);
 
-	
+	/* Wait (with a timeout) to let the ramdump complete */
 	ret = wait_for_completion_timeout(&rd_dev->ramdump_complete,
 			msecs_to_jiffies(RAMDUMP_WAIT_MSECS));
 
