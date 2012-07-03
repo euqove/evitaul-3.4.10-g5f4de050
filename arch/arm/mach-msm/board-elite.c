@@ -5018,12 +5018,6 @@ static struct i2c_board_info __initdata mpu3050_GSBI12_boardinfo[] = {
 	},
 };
 
-static struct msm_pm_sleep_status_data msm_pm_slp_sts_data = {
-	.base_addr = MSM_ACC0_BASE + 0x08,
-	.cpu_offset = MSM_ACC1_BASE - MSM_ACC0_BASE,
-	.mask = 1UL << 13,
-};
-
 static struct platform_device msm_device_saw_core0 = {
 	.name          = "saw-regulator",
 	.id            = 0,
@@ -6234,7 +6228,6 @@ static void __init elite_init(void)
 		htc_pm_monitor_init();
 	}
 
-	msm_pm_init_sleep_status_data(&msm_pm_slp_sts_data);
 	msm_pm_radio_info_init(MSM_SHARED_RAM_BASE + 0x1F0000);
 }
 
