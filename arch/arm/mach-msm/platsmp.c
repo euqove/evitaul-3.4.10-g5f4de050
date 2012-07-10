@@ -48,6 +48,10 @@ static void init_cpu_debug_counter_for_cold_boot(void)
 	mb();
 }
 
+/*
+ * control for which core is the next to come out of the secondary
+ * boot "holding pen".
+ */
 volatile int pen_release = -1;
 
 static DEFINE_SPINLOCK(boot_lock);
@@ -56,8 +60,16 @@ void __cpuinit platform_secondary_init(unsigned int cpu)
 {
 	WARN_ON(msm_platform_secondary_init(cpu));
 
+	/*
+	 * if any interrupts are already enabled for the primary
+	 * core (e.g. timer irq), then they will not have been enabled
+	 * for us: do so
+	 */
 	gic_secondary_init(0);
 
+	/*
+	 * Synchronise with the boot thread.
+	 */
 	spin_lock(&boot_lock);
 	spin_unlock(&boot_lock);
 }
@@ -160,7 +172,8 @@ static int __cpuinit release_secondary(unsigned int cpu)
 		return krait_release_secondary_sim(0xf9088000, cpu);
 
 	if (cpu_is_msm8960() || cpu_is_msm8930() || cpu_is_msm8930aa() ||
-	    cpu_is_apq8064() || cpu_is_msm8627() || cpu_is_apq8064ab())
+		cpu_is_apq8064() || cpu_is_msm8627() || cpu_is_msm8960ab() ||
+											cpu_is_apq8064ab())
 		return krait_release_secondary(0x02088000, cpu);
 
 	WARN(1, "unknown CPU case in release_secondary\n");
@@ -183,7 +196,7 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 
 	pr_debug("Starting secondary CPU %d\n", cpu);
 
-	
+	/* Set preset_lpj to avoid subsequent lpj recalculations */
 	preset_lpj = loops_per_jiffy;
 
 	if (cpu > 0 && cpu < ARRAY_SIZE(cold_boot_flags))
@@ -204,12 +217,29 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 		init_cpu_debug_counter_for_cold_boot();
 	}
 
+	/*
+	 * set synchronisation state between this boot processor
+	 * and the secondary one
+	 */
 	spin_lock(&boot_lock);
 
+	/*
+	 * The secondary processor is waiting to be released from
+	 * the holding pen - release it, then wait for it to flag
+	 * that it has been released by resetting pen_release.
+	 *
+	 * Note that "pen_release" is the hardware CPU ID, whereas
+	 * "cpu" is Linux's internal ID.
+	 */
 	pen_release = cpu_logical_map(cpu);
 	__cpuc_flush_dcache_area((void *)&pen_release, sizeof(pen_release));
 	outer_clean_range(__pa(&pen_release), __pa(&pen_release + 1));
 
+	/*
+	 * Send the secondary CPU a soft interrupt, thereby causing
+	 * the boot monitor to read the system wide flags register,
+	 * and branch to the address found there.
+	 */
 	gic_raise_softirq(cpumask_of(cpu), 1);
 
 	timeout = jiffies + (1 * HZ);
@@ -223,10 +253,18 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 		udelay(10);
 	}
 
+	/*
+	 * now the secondary core is starting up let it run its
+	 * calibrations, then wait for it to finish
+	 */
 	spin_unlock(&boot_lock);
 
 	return pen_release != -1 ? -ENOSYS : 0;
 }
+/*
+ * Initialise the CPU possible map early - this describes the CPUs
+ * which may be present or become present in the system.
+ */
 void __init smp_init_cpus(void)
 {
 	unsigned int i, ncores = get_core_count();
