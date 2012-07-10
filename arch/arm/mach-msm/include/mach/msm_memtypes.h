@@ -10,6 +10,9 @@
  * GNU General Public License for more details.
 */
 
+/* The MSM Hardware supports multiple flavors of physical memory.
+ * This file captures hardware specific information of these types.
+*/
 
 #ifndef __ASM_ARCH_MSM_MEMTYPES_H
 #define __ASM_ARCH_MSM_MEMTYPES_H
@@ -18,6 +21,7 @@
 #include <linux/init.h>
 
 int __init meminfo_init(unsigned int, unsigned int);
+/* Redundant check to prevent this from being included outside of 7x30 */
 #if defined(CONFIG_ARCH_MSM7X30)
 unsigned int get_num_populated_chipselects(void);
 #endif
@@ -61,6 +65,9 @@ struct reserve_info {
 };
 
 extern struct reserve_info *reserve_info;
+
+int __init dt_scan_for_memory_reserve(unsigned long node, const char *uname,
+					int depth, void *data);
 
 unsigned long __init reserve_memory_for_fmem(unsigned long, unsigned long);
 #endif
