@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -31,6 +31,13 @@ static inline void *msm_buspm_dev_get_vaddr(struct file *filp)
 	struct msm_buspm_map_dev *dev = filp->private_data;
 
 	return (dev) ? dev->vaddr : NULL;
+}
+
+static inline unsigned int msm_buspm_dev_get_buflen(struct file *filp)
+{
+	struct msm_buspm_map_dev *dev = filp->private_data;
+
+	return dev ? dev->buflen : 0;
 }
 
 static inline unsigned long msm_buspm_dev_get_paddr(struct file *filp)
@@ -107,6 +114,7 @@ msm_buspm_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	unsigned long paddr;
 	int retval = 0;
 	void *buf = msm_buspm_dev_get_vaddr(filp);
+	unsigned int buflen = msm_buspm_dev_get_buflen(filp);
 	unsigned char *dbgbuf = buf;
 
 	switch (cmd) {
@@ -149,7 +157,7 @@ msm_buspm_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			break;
 		}
 
-		if ((xfer.size <= sizeof(buf)) &&
+		if ((xfer.size <= buflen) &&
 			(copy_to_user((void __user *)xfer.data, buf,
 					xfer.size))) {
 			retval = -EFAULT;
@@ -170,7 +178,7 @@ msm_buspm_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			break;
 		}
 
-		if ((sizeof(buf) <= xfer.size) &&
+		if ((buflen <= xfer.size) &&
 			(copy_from_user(buf, (void __user *)xfer.data,
 			xfer.size))) {
 			retval = -EFAULT;
