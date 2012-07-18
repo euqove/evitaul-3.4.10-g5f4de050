@@ -53,6 +53,7 @@ enum req_unique_type {
 	REQ_UNIQUE_NONE,
 	REQ_UNIQUE_DISCARD,
 	REQ_UNIQUE_FLUSH,
+	REQ_UNIQUE_SANITIZE,
 };
 
 struct test_debug {
