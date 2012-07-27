@@ -92,9 +92,10 @@ struct mmc_data {
 	struct mmc_command	*stop;		
 	struct mmc_request	*mrq;		
 
-	unsigned int		sg_len;		
-	struct scatterlist	*sg;		
-	s32			host_cookie;	
+	unsigned int		sg_len;		/* size of scatter list */
+	struct scatterlist	*sg;		/* I/O scatter list */
+	s32			host_cookie;	/* host private data */
+	bool			fault_injected; /* fault injected */
 };
 
 struct mmc_request {
