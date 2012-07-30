@@ -520,6 +520,10 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			a hypervisor.
 			Default: yes
 
+	coherent_pool=nn[KMG]	[ARM,KNL]
+			Sets the size of memory pool for coherent, atomic dma
+			allocations, by default set to 256K.
+
 	code_bytes	[X86] How many bytes of object code to print
 			in an oops report.
 			Range: 0 - 8192
@@ -2526,6 +2530,10 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 				0: Toshiba Satellite 1800 (GP data pin select)
 				1: Fast pin select (default)
 				2: ATC IRMode
+
+	snddev_icodec.msm_codec_i2s_slave_mode= [ARM-MSM]
+			1, codec is I2S master
+			0, MSM is I2S master (default)
 
 	softlockup_panic=
 			[KNL] Should the soft-lockup detector generate panics.
