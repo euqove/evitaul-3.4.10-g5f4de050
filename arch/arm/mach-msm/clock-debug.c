@@ -29,6 +29,8 @@ static int clock_debug_rate_set(void *data, u64 val)
 	struct clk *clock = data;
 	int ret;
 
+	/* Only increases to max rate will succeed, but that's actually good
+	 * for debugging purposes so we don't check for error. */
 	if (clock->flags & CLKFLAG_MAX)
 		clk_set_max_rate(clock, val);
 	ret = clk_set_rate(clock, val);
@@ -55,18 +57,25 @@ static int clock_debug_measure_get(void *data, u64 *val)
 	struct clk *clock = data;
 	int ret, is_hw_gated;
 
-	
-	if (clock->flags & CLKFLAG_HWCG)
+	/* Check to see if the clock is in hardware gating mode */
+	if (clock->ops->in_hwcg_mode)
 		is_hw_gated = clock->ops->in_hwcg_mode(clock);
 	else
 		is_hw_gated = 0;
 
 	ret = clk_set_parent(measure, clock);
 	if (!ret) {
+		/*
+		 * Disable hw gating to get accurate rate measurements. Only do
+		 * this if the clock is explictly enabled by software. This
+		 * allows us to detect errors where clocks are on even though
+		 * software is not requesting them to be on due to broken
+		 * hardware gating signals.
+		 */
 		if (is_hw_gated && clock->count)
 			clock->ops->disable_hwcg(clock);
 		*val = clk_get_rate(measure);
-		
+		/* Reenable hwgating if it was disabled */
 		if (is_hw_gated && clock->count)
 			clock->ops->enable_hwcg(clock);
 	}
@@ -125,7 +134,10 @@ DEFINE_SIMPLE_ATTRIBUTE(clock_local_fops, clock_debug_local_get,
 static int clock_debug_hwcg_get(void *data, u64 *val)
 {
 	struct clk *clock = data;
-	*val = !!(clock->flags & CLKFLAG_HWCG);
+	if (clock->ops->in_hwcg_mode)
+		*val = !!clock->ops->in_hwcg_mode(clock);
+	else
+		*val = 0;
 	return 0;
 }
 
@@ -308,7 +320,7 @@ static int list_rates_show(struct seq_file *m, void *unused)
 	struct clk *clock = m->private;
 	int rate, level, fmax = 0, i = 0;
 
-	
+	/* Find max frequency supported within voltage constraints. */
 	if (!clock->vdd_class) {
 		fmax = INT_MAX;
 	} else {
@@ -317,6 +329,10 @@ static int list_rates_show(struct seq_file *m, void *unused)
 				fmax = clock->fmax[level];
 	}
 
+	/*
+	 * List supported frequencies <= fmax. Higher frequencies may appear in
+	 * the frequency table, but are not valid and should not be listed.
+	 */
 	while ((rate = clock->ops->list_rate(clock, i++)) >= 0) {
 		if (rate <= fmax)
 			seq_printf(m, "%u\n", rate);
