@@ -16,11 +16,14 @@
 #include <mach/scm.h>
 #include "scm-boot.h"
 
-int scm_set_boot_addr(void *addr, int flags)
+/*
+ * Set the cold/warm boot address for one of the CPU cores.
+ */
+int scm_set_boot_addr(phys_addr_t addr, unsigned int flags)
 {
 	struct {
 		unsigned int flags;
-		void *addr;
+		unsigned long addr;
 	} cmd;
 
 	cmd.addr = addr;
