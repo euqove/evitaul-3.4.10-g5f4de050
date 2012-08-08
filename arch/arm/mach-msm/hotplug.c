@@ -49,13 +49,21 @@ static inline void platform_do_lowpower(unsigned int cpu)
 		msm_pm_cpu_enter_lowpower(cpu);
 		if (pen_release == cpu_logical_map(cpu)) {
 			pen_release = -1;
-			dmac_flush_range((void *)&pen_release,
-				(void *)(&pen_release + sizeof(pen_release)));
+			dmac_flush_range((char *)&pen_release,
+				(char *)&pen_release + sizeof(pen_release));
 			break;
 		}
 
-		dmac_inv_range((void *)&pen_release,
-			       (void *)(&pen_release + sizeof(pen_release)));
+		/*
+		 * getting here, means that we have come out of WFI without
+		 * having been woken up - this shouldn't happen
+		 *
+		 * The trouble is, letting people know about this is not really
+		 * possible, since we are currently running incoherently, and
+		 * therefore cannot safely call printk() or anything else
+		 */
+		dmac_inv_range((char *)&pen_release,
+			       (char *)&pen_release + sizeof(pen_release));
 		pr_debug("CPU%u: spurious wakeup call\n", cpu);
 	}
 }
