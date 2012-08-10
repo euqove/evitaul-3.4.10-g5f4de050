@@ -120,7 +120,7 @@ static int register_fabric_info(struct platform_device *pdev,
 
 	for (i = 0; i < fabric->pdata->len; i++) {
 		struct msm_bus_inode_info *info;
-		int ctx;
+		int ctx, j;
 
 		info = kzalloc(sizeof(struct msm_bus_inode_info), GFP_KERNEL);
 		if (info == NULL) {
@@ -170,11 +170,17 @@ static int register_fabric_info(struct platform_device *pdev,
 		if (fabric->fabdev.hw_algo.node_init == NULL)
 			continue;
 
+		for (j = 0; j < NUM_CTX; j++)
+			clk_prepare_enable(fabric->info.nodeclk[j].clk);
+
 		fabric->fabdev.hw_algo.node_init(fabric->hw_data, info);
 		if (ret) {
 			MSM_BUS_ERR("Unable to init node info, ret: %d\n", ret);
 			kfree(info);
 		}
+
+		for (j = 0; j < NUM_CTX; j++)
+			clk_disable_unprepare(fabric->info.nodeclk[j].clk);
 	}
 
 	MSM_BUS_DBG("Fabric: %d nmasters: %d nslaves: %d\n"
@@ -303,6 +309,7 @@ void msm_bus_fabric_update_bw(struct msm_bus_fabric_device *fabdev,
 {
 	struct msm_bus_fabric *fabric = to_msm_bus_fabric(fabdev);
 	void *sel_cdata;
+	int i;
 
 	
 	if (machine_is_msm8974())
@@ -320,8 +327,14 @@ void msm_bus_fabric_update_bw(struct msm_bus_fabric_device *fabdev,
 		return;
 	}
 
+	for (i = 0; i < NUM_CTX; i++)
+		clk_prepare_enable(fabric->info.nodeclk[i].clk);
+
 	fabdev->hw_algo.update_bw(hop, info, fabric->pdata, sel_cdata,
 		master_tiers, add_bw);
+	for (i = 0; i < NUM_CTX; i++)
+		clk_disable_unprepare(fabric->info.nodeclk[i].clk);
+
 	fabric->arb_dirty = true;
 }
 
