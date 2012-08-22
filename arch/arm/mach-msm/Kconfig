@@ -2774,6 +2774,17 @@ config QUALCOMM_WLAN_PXO
 	help
 	  Use PXO for clock source of WLAN chip
 
+config MSM_FIQ
+	bool "Enable FIQ for debugging"
+	depends on ARCH_MSM8625
+	select FIQ
+	select GIC_SECURE
+	help
+	  Enable any line to be used as an FIQ. This will help debugging
+	  if apps is not responding and holding lock with irqs disabled.
+	  Modem will then generate an raise a FIQ on this line before sending
+	  SMSM reset.
+
 config MSM_USE_USER_ACCESSIBLE_TIMERS
 	bool "Enables mapping an MSM timer counter page to user space."
 	depends on ARM_USE_USER_ACCESSIBLE_TIMERS
