@@ -3298,6 +3298,7 @@ int smd_core_init(void)
 			flags, "smd_dev", 0);
 	if (r < 0)
 		return r;
+	interrupt_stats[SMD_MODEM].smd_interrupt_id = INT_A9_M2A_0;
 	r = enable_irq_wake(INT_A9_M2A_0);
 	if (r < 0)
 		pr_err("smd_core_init: "
@@ -3309,6 +3310,7 @@ int smd_core_init(void)
 		free_irq(INT_A9_M2A_0, 0);
 		return r;
 	}
+	interrupt_stats[SMD_MODEM].smsm_interrupt_id = INT_A9_M2A_5;
 	r = enable_irq_wake(INT_A9_M2A_5);
 	if (r < 0)
 		pr_err("smd_core_init: "
@@ -3326,6 +3328,7 @@ int smd_core_init(void)
 		return r;
 	}
 
+	interrupt_stats[SMD_Q6].smd_interrupt_id = INT_ADSP_A11;
 	r = request_irq(INT_ADSP_A11_SMSM, smsm_dsp_irq_handler,
 			flags, "smsm_dev", smsm_dsp_irq_handler);
 	if (r < 0) {
@@ -3335,6 +3338,7 @@ int smd_core_init(void)
 		return r;
 	}
 
+	interrupt_stats[SMD_Q6].smsm_interrupt_id = INT_ADSP_A11_SMSM;
 	r = enable_irq_wake(INT_ADSP_A11);
 	if (r < 0)
 		pr_err("smd_core_init: "
@@ -3360,6 +3364,7 @@ int smd_core_init(void)
 		return r;
 	}
 
+	interrupt_stats[SMD_DSPS].smd_interrupt_id = INT_DSPS_A11;
 	r = enable_irq_wake(INT_DSPS_A11);
 	if (r < 0)
 		pr_err("smd_core_init: "
@@ -3378,6 +3383,7 @@ int smd_core_init(void)
 		return r;
 	}
 
+	interrupt_stats[SMD_WCNSS].smd_interrupt_id = INT_WCNSS_A11;
 	r = enable_irq_wake(INT_WCNSS_A11);
 	if (r < 0)
 		pr_err("smd_core_init: "
@@ -3395,6 +3401,7 @@ int smd_core_init(void)
 		return r;
 	}
 
+	interrupt_stats[SMD_WCNSS].smsm_interrupt_id = INT_WCNSS_A11_SMSM;
 	r = enable_irq_wake(INT_WCNSS_A11_SMSM);
 	if (r < 0)
 		pr_err("smd_core_init: "
@@ -3415,6 +3422,7 @@ int smd_core_init(void)
 		return r;
 	}
 
+	interrupt_stats[SMD_DSPS].smsm_interrupt_id = INT_DSPS_A11_SMSM;
 	r = enable_irq_wake(INT_DSPS_A11_SMSM);
 	if (r < 0)
 		pr_err("smd_core_init: "
@@ -3544,6 +3552,8 @@ int smd_core_platform_init(struct platform_device *pdev)
 			goto intr_failed;
 		}
 
+		interrupt_stats[cfg->irq_config_id].smd_interrupt_id
+						 = cfg->smd_int.irq_id;
 		/* only init smsm structs if this edge supports smsm */
 		if (cfg->smsm_int.irq_id)
 			ret = intr_init(
@@ -3559,6 +3569,9 @@ int smd_core_platform_init(struct platform_device *pdev)
 			goto intr_failed;
 		}
 
+		if (cfg->smsm_int.irq_id)
+			interrupt_stats[cfg->irq_config_id].smsm_interrupt_id
+						 = cfg->smsm_int.irq_id;
 		if (cfg->subsys_name)
 			strlcpy(edge_to_pids[cfg->edge].subsys_name,
 				cfg->subsys_name, SMD_MAX_CH_NAME_LEN);
