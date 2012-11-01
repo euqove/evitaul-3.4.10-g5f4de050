@@ -351,10 +351,12 @@ extern struct platform_device led_pdev;
 
 extern struct platform_device msm8960_rpm_device;
 extern struct platform_device msm8960_rpm_stat_device;
+extern struct platform_device msm8960_rpm_master_stat_device;
 extern struct platform_device msm8960_rpm_log_device;
 
 extern struct platform_device msm8930_rpm_device;
 extern struct platform_device msm8930_rpm_stat_device;
+extern struct platform_device msm8930_rpm_master_stat_device;
 extern struct platform_device msm8930_rpm_log_device;
 
 extern struct platform_device msm8660_rpm_device;
@@ -363,10 +365,12 @@ extern struct platform_device msm8660_rpm_log_device;
 
 extern struct platform_device msm9615_rpm_device;
 extern struct platform_device msm9615_rpm_stat_device;
+extern struct platform_device msm9615_rpm_master_stat_device;
 extern struct platform_device msm9615_rpm_log_device;
 
 extern struct platform_device apq8064_rpm_device;
 extern struct platform_device apq8064_rpm_stat_device;
+extern struct platform_device apq8064_rpm_master_stat_device;
 extern struct platform_device apq8064_rpm_log_device;
 
 extern struct platform_device msm_device_rng;
