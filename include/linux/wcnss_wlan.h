@@ -51,6 +51,7 @@ unsigned int wcnss_get_serial_number(void);
 void wcnss_flush_delayed_boot_votes(void);
 void wcnss_allow_suspend(void);
 void wcnss_prevent_suspend(void);
+void wcnss_ssr_boot_notify(void);
 void *wcnss_prealloc_get(unsigned int size);
 int wcnss_prealloc_put(void *ptr);
 void wcnss_reset_intr(void);
