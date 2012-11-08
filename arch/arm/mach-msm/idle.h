@@ -14,11 +14,8 @@
 #ifndef _ARCH_ARM_MACH_MSM_IDLE_H_
 #define _ARCH_ARM_MACH_MSM_IDLE_H_
 
-#ifdef CONFIG_MSM_CPU_AVS
-#define CPU_SAVED_STATE_SIZE (4 * 11 + 4 * 10 + 4 * 3)
-#else
+/* 11 general purpose registers (r4-r14), 10 cp15 registers */
 #define CPU_SAVED_STATE_SIZE (4 * 11 + 4 * 10)
-#endif
 
 #define ON	1
 #define OFF	0
@@ -45,16 +42,16 @@ extern uint32_t *l2x0_base_addr;
 #else
 static inline void msm_pm_set_l2_flush_flag(unsigned int flag)
 {
-	
+	/* empty */
 }
 static inline void msm_pm_boot_entry(void)
 {
-	
+	/* empty */
 }
 static inline void msm_pm_write_boot_vector(unsigned int cpu,
 						unsigned long address)
 {
-	
+	/* empty */
 }
 #endif
 #endif
