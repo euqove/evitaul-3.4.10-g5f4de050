@@ -2212,6 +2212,7 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 	struct android_usb_function *f;
 	int enabled = 0;
 
+
 	if (!cdev)
 		return -ENODEV;
 
