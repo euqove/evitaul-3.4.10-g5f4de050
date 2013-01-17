@@ -39,7 +39,7 @@ struct convert_context {
 	unsigned int idx_in;
 	unsigned int idx_out;
 	sector_t sector;
-	atomic_t cc_pending;
+	atomic_t pending;
 	struct ablkcipher_request *req;
 };
 
@@ -50,7 +50,7 @@ struct dm_crypt_io {
 
 	struct convert_context ctx;
 
-	atomic_t io_pending;
+	atomic_t pending;
 	int error;
 	sector_t sector;
 	struct dm_crypt_io *base_io;
@@ -663,14 +663,14 @@ static int crypt_convert(struct crypt_config *cc,
 {
 	int r;
 
-	atomic_set(&ctx->cc_pending, 1);
+	atomic_set(&ctx->pending, 1);
 
 	while(ctx->idx_in < ctx->bio_in->bi_vcnt &&
 	      ctx->idx_out < ctx->bio_out->bi_vcnt) {
 
 		crypt_alloc_req(cc, ctx);
 
-		atomic_inc(&ctx->cc_pending);
+		atomic_inc(&ctx->pending);
 
 		r = crypt_convert_block(cc, ctx, ctx->req);
 
@@ -687,14 +687,14 @@ static int crypt_convert(struct crypt_config *cc,
 
 		
 		case 0:
-			atomic_dec(&ctx->cc_pending);
+			atomic_dec(&ctx->pending);
 			ctx->sector++;
 			cond_resched();
 			continue;
 
 		
 		default:
-			atomic_dec(&ctx->cc_pending);
+			atomic_dec(&ctx->pending);
 			return r;
 		}
 	}
@@ -780,14 +780,14 @@ static struct dm_crypt_io *crypt_io_alloc(struct dm_target *ti,
 	io->error = 0;
 	io->base_io = NULL;
 	io->ctx.req = NULL;
-	atomic_set(&io->io_pending, 0);
+	atomic_set(&io->pending, 0);
 
 	return io;
 }
 
 static void crypt_inc_pending(struct dm_crypt_io *io)
 {
-	atomic_inc(&io->io_pending);
+	atomic_inc(&io->pending);
 }
 
 static void crypt_dec_pending(struct dm_crypt_io *io)
@@ -797,7 +797,7 @@ static void crypt_dec_pending(struct dm_crypt_io *io)
 	struct dm_crypt_io *base_io = io->base_io;
 	int error = io->error;
 
-	if (!atomic_dec_and_test(&io->io_pending))
+	if (!atomic_dec_and_test(&io->pending))
 		return;
 
 	if (io->ctx.req)
@@ -955,7 +955,8 @@ static void kcryptd_crypt_write_convert(struct dm_crypt_io *io)
 		r = crypt_convert(cc, &io->ctx);
 		if (r < 0)
 			io->error = -EIO;
-		crypt_finished = atomic_dec_and_test(&io->ctx.cc_pending);
+
+		crypt_finished = atomic_dec_and_test(&io->ctx.pending);
 
 		
 		if (crypt_finished) {
@@ -1010,11 +1011,10 @@ static void kcryptd_crypt_read_convert(struct dm_crypt_io *io)
 			   io->sector);
 
 	r = crypt_convert(cc, &io->ctx);
-
 	if (r < 0)
 		io->error = -EIO;
 
-	if (atomic_dec_and_test(&io->ctx.cc_pending))
+	if (atomic_dec_and_test(&io->ctx.pending))
 		kcryptd_crypt_read_done(io);
 
 	crypt_dec_pending(io);
@@ -1041,7 +1041,7 @@ static void kcryptd_async_done(struct crypto_async_request *async_req,
 
 	mempool_free(req_of_dmreq(cc, dmreq), cc->req_pool);
 
-	if (!atomic_dec_and_test(&ctx->cc_pending))
+	if (!atomic_dec_and_test(&ctx->pending))
 		return;
 
 	if (bio_data_dir(io->base_bio) == READ)
