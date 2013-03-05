@@ -948,69 +948,9 @@ static struct reserve_info msm8960_reserve_info __initdata = {
 	.paddr_to_memtype = msm8960_paddr_to_memtype,
 };
 
-#ifdef MEMORY_HOTPLUG
-static int msm8960_memory_bank_size(void)
-{
-	return 1<<29;
-}
-
-static void __init locate_unstable_memory(void)
-{
-	struct membank *mb = &meminfo.bank[meminfo.nr_banks - 1];
-	unsigned long bank_size;
-	unsigned long low, high;
-
-	bank_size = msm8960_memory_bank_size();
-	msm8960_reserve_info.bank_size = bank_size;
-
-	low = meminfo.bank[0].start;
-	high = mb->start + mb->size;
-
-	
-	if (high < mb->start)
-		high = ~0UL;
-
-	if (high < MAX_FIXED_AREA_SIZE + MSM8960_FIXED_AREA_START)
-		panic("fixed area extends beyond end of memory\n");
-
-	low &= ~(bank_size - 1);
-
-	if (high - low <= bank_size)
-		goto no_dmm;
-
-#ifdef CONFIG_ENABLE_DMM
-	msm8960_reserve_info.low_unstable_address = low + bank_size;
-	msm8960_reserve_info.max_unstable_size = (mb->start - low) +
-						mb->size - bank_size;
-	pr_info("low unstable address %lx max size %lx bank size %lx\n",
-		msm8960_reserve_info.low_unstable_address,
-		msm8960_reserve_info.max_unstable_size,
-		msm8960_reserve_info.bank_size);
-	return;
-#endif
-no_dmm:
-	msm8960_reserve_info.low_unstable_address = high;
-	msm8960_reserve_info.max_unstable_size = 0;
-}
-
-static void __init place_movable_zone(void)
-{
-#ifdef CONFIG_ENABLE_DMM
-	movable_reserved_start = msm8960_reserve_info.low_unstable_address;
-	movable_reserved_size = msm8960_reserve_info.max_unstable_size;
-	pr_info("movable zone start %lx size %lx\n",
-		movable_reserved_start, movable_reserved_size);
-#endif
-}
-#endif
-
 static void __init elite_early_memory(void)
 {
 	reserve_info = &msm8960_reserve_info;
-#ifdef MEMORY_HOTPLUG
-	locate_unstable_memory();
-	place_movable_zone();
-#endif
 }
 
 static char prim_panel_name[PANEL_NAME_MAX_LEN];
@@ -1048,12 +988,6 @@ static void __init elite_reserve(void)
 		}
 #endif
 	}
-}
-
-static int msm8960_change_memory_power(u64 start, u64 size,
-	int change_type)
-{
-	return soc_change_memory_power(start, size, change_type);
 }
 
 #ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_2_PHASE
@@ -6201,8 +6135,6 @@ static void __init elite_init(void)
 	msm8960_init_fb();
 	slim_register_board_info(msm_slim_devices,
 		ARRAY_SIZE(msm_slim_devices));
-
-	change_memory_power = &msm8960_change_memory_power;
 
 #ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_2_PHASE
 	if(!cpu_is_krait_v1())
