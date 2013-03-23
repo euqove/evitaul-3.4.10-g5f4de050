@@ -864,12 +864,27 @@ void part_round_stats(int cpu, struct hd_struct *part)
 }
 EXPORT_SYMBOL_GPL(part_round_stats);
 
+#ifdef CONFIG_PM_RUNTIME
+static void blk_pm_put_request(struct request *rq)
+{
+	if (rq->q->dev && !(rq->cmd_flags & REQ_PM) && !--rq->q->nr_pending)
+		pm_runtime_mark_last_busy(rq->q->dev);
+}
+#else
+static inline void blk_pm_put_request(struct request *rq) {}
+#endif
+
+/*
+ * queue lock must be held
+ */
 void __blk_put_request(struct request_queue *q, struct request *req)
 {
 	if (unlikely(!q))
 		return;
 	if (unlikely(--req->ref_count))
 		return;
+
+	blk_pm_put_request(req);
 
 	elv_completed_request(q, req);
 
@@ -1457,12 +1472,55 @@ static void blk_account_io_done(struct request *req)
 	}
 }
 
+#ifdef CONFIG_PM_RUNTIME
+/*
+ * Don't process normal requests when queue is suspended
+ * or in the process of suspending/resuming
+ */
+static struct request *blk_pm_peek_request(struct request_queue *q,
+					   struct request *rq)
+{
+	if (q->dev && (q->rpm_status == RPM_SUSPENDED ||
+	    (q->rpm_status != RPM_ACTIVE && !(rq->cmd_flags & REQ_PM))))
+		return NULL;
+	else
+		return rq;
+}
+#else
+static inline struct request *blk_pm_peek_request(struct request_queue *q,
+						  struct request *rq)
+{
+	return rq;
+}
+#endif
+
+/**
+ * blk_peek_request - peek at the top of a request queue
+ * @q: request queue to peek at
+ *
+ * Description:
+ *     Return the request at the top of @q.  The returned request
+ *     should be started using blk_start_request() before LLD starts
+ *     processing it.
+ *
+ * Return:
+ *     Pointer to the request at the top of @q if available.  Null
+ *     otherwise.
+ *
+ * Context:
+ *     queue_lock must be held.
+ */
 struct request *blk_peek_request(struct request_queue *q)
 {
 	struct request *rq;
 	int ret;
 
 	while ((rq = __elv_next_request(q)) != NULL) {
+
+		rq = blk_pm_peek_request(q, rq);
+		if (!rq)
+			break;
+
 		if (!(rq->cmd_flags & REQ_STARTED)) {
 			if (rq->cmd_flags & REQ_SORTED)
 				elv_activate_rq(q, rq);
