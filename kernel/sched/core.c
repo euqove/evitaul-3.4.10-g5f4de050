@@ -3554,6 +3554,7 @@ long __sched io_schedule_timeout(long timeout)
 	delayacct_blkio_end();
 	return ret;
 }
+EXPORT_SYMBOL(io_schedule_timeout);
 
 SYSCALL_DEFINE1(sched_get_priority_max, int, policy)
 {
