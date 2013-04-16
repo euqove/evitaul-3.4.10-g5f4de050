@@ -5185,6 +5185,7 @@ static struct platform_device *common_devices[] __initdata = {
 	&htc_battery_pdev,
 #endif
 	&msm_tsens_device,
+	&msm8960_cpu_slp_status,
 #ifdef CONFIG_PERFLOCK
 	&msm8960_device_perf_lock,
 #endif

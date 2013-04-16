@@ -1,7 +1,7 @@
 /* arch/arm/mach-msm/pm.h
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2009-2012, The Linux Foundation. All rights reserved.
  * Author: San Mehat <san@android.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -65,6 +65,12 @@ struct msm_pm_time_params {
 	uint32_t modified_time_us;
 };
 
+struct msm_pm_sleep_status_data {
+	void *base_addr;
+	uint32_t cpu_offset;
+	uint32_t mask;
+};
+
 struct msm_pm_platform_data {
 	u8 idle_supported;   
 	u8 suspend_supported; 
@@ -96,10 +102,12 @@ void msm_pm_cpu_enter_lowpower(unsigned int cpu);
 #ifdef CONFIG_MSM_PM8X60
 void msm_pm_set_rpm_wakeup_irq(unsigned int irq);
 void msm_pm_set_sleep_ops(struct msm_pm_sleep_ops *ops);
+int msm_pm_wait_cpu_shutdown(unsigned int cpu);
 void msm_pm_radio_info_init(unsigned int *addr);
 #else
 static inline void msm_pm_set_rpm_wakeup_irq(unsigned int irq) {}
 static inline void msm_pm_set_sleep_ops(struct msm_pm_sleep_ops *ops) {}
+static inline int msm_pm_wait_cpu_shutdown(unsigned int cpu) { return 0; }
 static inline void msm_pm_radio_info_init(unsigned int *addr) {}
 #endif
 #ifdef CONFIG_HOTPLUG_CPU
