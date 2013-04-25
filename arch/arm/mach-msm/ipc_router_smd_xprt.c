@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -10,6 +10,9 @@
  * GNU General Public License for more details.
  */
 
+/*
+ * IPC ROUTER SMD XPRT module.
+ */
 #define DEBUG
 
 #include <linux/module.h>
@@ -48,7 +51,7 @@ struct msm_ipc_router_smd_xprt {
 	struct rr_packet *in_pkt;
 	int is_partial_in_pkt;
 	struct delayed_work read_work;
-	spinlock_t ss_reset_lock;	
+	spinlock_t ss_reset_lock;	/*Subsystem reset lock*/
 	int ss_reset;
 	void *pil;
 };
@@ -412,7 +415,7 @@ static void *msm_ipc_load_subsystem(uint32_t edge)
 static int msm_ipc_router_smd_remote_probe(struct platform_device *pdev)
 {
 	int rc;
-	int id;		
+	int id;		/*Index into the smd_xprt_cfg table*/
 
 	id = find_smd_xprt_cfg(pdev);
 	if (id < 0) {
@@ -470,31 +473,6 @@ static int msm_ipc_router_smd_remote_probe(struct platform_device *pdev)
 
 	return 0;
 }
-
-void *msm_ipc_load_default_node(void)
-{
-	void *pil = NULL;
-	const char *peripheral;
-
-	peripheral = smd_edge_to_subsystem(SMD_APPS_MODEM);
-	if (peripheral && !strncmp(peripheral, "modem", 6)) {
-		pil = pil_get(peripheral);
-		if (IS_ERR(pil)) {
-			pr_err("%s: Failed to load %s\n",
-				__func__, peripheral);
-			pil = NULL;
-		}
-	}
-	return pil;
-}
-EXPORT_SYMBOL(msm_ipc_load_default_node);
-
-void msm_ipc_unload_default_node(void *pil)
-{
-	if (pil)
-		pil_put(pil);
-}
-EXPORT_SYMBOL(msm_ipc_unload_default_node);
 
 static struct platform_driver msm_ipc_router_smd_remote_driver[] = {
 	{

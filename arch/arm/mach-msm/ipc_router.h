@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,6 +25,7 @@
 
 #include <net/sock.h>
 
+/* definitions for the R2R wire protcol */
 #define IPC_ROUTER_VERSION			1
 #define IPC_ROUTER_PROCESSORS_MAX		4
 
@@ -91,6 +92,7 @@ struct rr_header {
 
 #define IPC_ROUTER_HDR_SIZE sizeof(struct rr_header)
 #define MAX_IPC_PKT_SIZE 66000
+/* internals */
 
 #define IPC_ROUTER_MAX_REMOTE_SERVERS		100
 #define MAX_WAKELOCK_NAME_SZ 32
@@ -136,7 +138,6 @@ struct msm_ipc_port {
 struct msm_ipc_sock {
 	struct sock sk;
 	struct msm_ipc_port *port;
-	void *default_pil;
 };
 
 enum write_data_type {
@@ -211,16 +212,5 @@ int msm_ipc_router_unregister_server(struct msm_ipc_port *server_port);
 
 int msm_ipc_router_init_sockets(void);
 void msm_ipc_router_exit_sockets(void);
-
-#if defined CONFIG_MSM_IPC_ROUTER_SMD_XPRT
-extern void *msm_ipc_load_default_node(void);
-
-extern void msm_ipc_unload_default_node(void *pil);
-#else
-static inline void *msm_ipc_load_default_node(void)
-{ return NULL; }
-
-static inline void msm_ipc_unload_default_node(void *pil) { }
-#endif
 
 #endif
