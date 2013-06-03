@@ -58,6 +58,7 @@
 #include "timer.h"
 #include "pm-boot.h"
 #include <mach/event_timer.h>
+#include <linux/cpu_pm.h>
 #ifdef CONFIG_TRACING_IRQ_PWR
 #include "../../../drivers/gpio/gpio-msm-common.h"
 #define PWR_KEY_MSMz 26
@@ -646,6 +647,9 @@ static bool __ref msm_pm_spm_power_collapse(
 		pr_info("CPU%u: %s: notify_rpm %d\n",
 			cpu, __func__, (int) notify_rpm);
 
+	if (from_idle == true)
+		cpu_pm_enter();
+
 	ret = msm_spm_set_low_power_mode(
 			MSM_SPM_MODE_POWER_COLLAPSE, notify_rpm);
 	WARN_ON(ret);
@@ -742,6 +746,10 @@ static bool __ref msm_pm_spm_power_collapse(
 
 	ret = msm_spm_set_low_power_mode(MSM_SPM_MODE_CLOCK_GATING, false);
 	WARN_ON(ret);
+
+	if (from_idle == true)
+		cpu_pm_exit();
+
 	return collapsed;
 }
 
