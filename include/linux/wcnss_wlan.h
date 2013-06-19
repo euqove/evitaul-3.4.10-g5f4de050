@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2012, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2011-2012, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -23,6 +23,12 @@ enum wcnss_opcode {
 
 struct wcnss_wlan_config {
 	int		use_48mhz_xo;
+};
+
+enum {
+	WCNSS_XO_48MHZ = 1,
+	WCNSS_XO_19MHZ,
+	WCNSS_XO_INVALID,
 };
 
 #define WCNSS_WLAN_IRQ_INVALID -1
@@ -55,6 +61,8 @@ void wcnss_ssr_boot_notify(void);
 void *wcnss_prealloc_get(unsigned int size);
 int wcnss_prealloc_put(void *ptr);
 void wcnss_reset_intr(void);
+int wcnss_wlan_iris_xo_mode(void);
+
 #define wcnss_wlan_get_drvdata(dev) dev_get_drvdata(dev)
 #define wcnss_wlan_set_drvdata(dev, data) dev_set_drvdata((dev), (data))
 
