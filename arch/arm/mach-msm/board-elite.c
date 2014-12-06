@@ -47,6 +47,7 @@
 #include <linux/ks8851.h>
 #include <linux/proc_fs.h>
 #include <linux/cm3629.h>
+#include <linux/memblock.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/setup.h>
@@ -87,6 +88,7 @@
 #include <mach/msm_rtb.h>
 #include <mach/msm_cache_dump.h>
 #include <mach/scm.h>
+#include <mach/iommu_domains.h>
 #include <mach/kgsl.h>
 #include <linux/fmem.h>
 
@@ -321,54 +323,59 @@ void elite_lcd_id_power(int pull)
 
 #endif
 
-#define MSM_PMEM_ADSP_SIZE         0x6D00000
-#define MSM_PMEM_ADSP2_SIZE        0x730000
+#define MSM_PMEM_ADSP_SIZE         0x7800000
 #define MSM_PMEM_AUDIO_SIZE        0x4CF000
-#ifdef CONFIG_MSM_IOMMU
-#define MSM_PMEM_SIZE 0x00000000 
-#else
-#define MSM_PMEM_SIZE 0x4800000 
-#endif
-#define MSM_LIQUID_PMEM_SIZE 0x4000000 
+#define MSM_PMEM_SIZE 0x2800000 /* 40 Mbytes */
+#define MSM_LIQUID_PMEM_SIZE 0x4000000 /* 64 Mbytes */
+#define MSM_HDMI_PRIM_PMEM_SIZE 0x4000000 /* 64 Mbytes */
 
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
-#define MSM_PMEM_KERNEL_EBI1_SIZE  0x280000
-#define MSM_ION_SF_SIZE		MSM_PMEM_SIZE
-#define MSM_ION_MM_FW_SIZE	0x200000 
+#define HOLE_SIZE	0x20000
+#define MSM_CONTIG_MEM_SIZE  0x65000
 #ifdef CONFIG_MSM_IOMMU
-#define MSM_ION_MM_SIZE		0x4700000
-#else
-#define MSM_ION_MM_SIZE		MSM_PMEM_ADSP_SIZE - MSM_PMEM_ADSP2_SIZE
-#define MSM_ION_ROTATOR_SIZE	MSM_PMEM_ADSP2_SIZE
-#endif
-#define MSM_ION_QSECOM_SIZE	0x100000 
-#define MSM_ION_MFC_SIZE	0x100000  
-#define MSM_ION_AUDIO_SIZE	MSM_PMEM_AUDIO_SIZE
-#ifdef CONFIG_MSM_IOMMU
+#define MSM_ION_MM_SIZE            0x3800000 /* Need to be multiple of 64K */
+#define MSM_ION_SF_SIZE            0x0
+#define MSM_ION_QSECOM_SIZE        0x780000 /* (7.5MB) */
 #define MSM_ION_HEAP_NUM	7
 #else
+#define MSM_ION_MM_SIZE            MSM_PMEM_ADSP_SIZE
+#define MSM_ION_SF_SIZE            MSM_PMEM_SIZE
+#define MSM_ION_QSECOM_SIZE        0x600000 /* (6MB) */
 #define MSM_ION_HEAP_NUM	8
 #endif
+#define MSM_ION_MM_FW_SIZE	(0x200000 - HOLE_SIZE) /* 128kb */
+#define MSM_ION_MFC_SIZE	SZ_8K
+#define MSM_ION_AUDIO_SIZE	MSM_PMEM_AUDIO_SIZE
+
 #define MSM_LIQUID_ION_MM_SIZE (MSM_ION_MM_SIZE + 0x600000)
-static unsigned int msm_ion_cp_mm_size = MSM_ION_MM_SIZE;
+#define MSM_LIQUID_ION_SF_SIZE MSM_LIQUID_PMEM_SIZE
+#define MSM_HDMI_PRIM_ION_SF_SIZE MSM_HDMI_PRIM_PMEM_SIZE
+
+#define MSM_MM_FW_SIZE		(0x200000 - HOLE_SIZE) /* 2mb -128kb*/
+#define MSM8960_FIXED_AREA_START (0xa0000000 - (MSM_ION_MM_FW_SIZE + \
+							HOLE_SIZE))
+#define MAX_FIXED_AREA_SIZE	0x10000000
+#define MSM8960_FW_START	MSM8960_FIXED_AREA_START
+
+static unsigned msm_ion_sf_size = MSM_ION_SF_SIZE;
 #else
-#define MSM_PMEM_KERNEL_EBI1_SIZE  0x110C000
+#define MSM_CONTIG_MEM_SIZE  0x110C000
 #define MSM_ION_HEAP_NUM	1
 #endif
 
-#ifdef CONFIG_KERNEL_PMEM_EBI_REGION
-static unsigned pmem_kernel_ebi1_size = MSM_PMEM_KERNEL_EBI1_SIZE;
-static int __init pmem_kernel_ebi1_size_setup(char *p)
+#ifdef CONFIG_KERNEL_MSM_CONTIG_MEM_REGION
+static unsigned msm_contig_mem_size = MSM_CONTIG_MEM_SIZE;
+static int __init msm_contig_mem_size_setup(char *p)
 {
-	pmem_kernel_ebi1_size = memparse(p, NULL);
+	msm_contig_mem_size = memparse(p, NULL);
 	return 0;
 }
-early_param("pmem_kernel_ebi1_size", pmem_kernel_ebi1_size_setup);
+early_param("msm_contig_mem_size", msm_contig_mem_size_setup);
 #endif
 
 #ifdef CONFIG_ANDROID_PMEM
 static unsigned pmem_size = MSM_PMEM_SIZE;
-static unsigned pmem_param_set = 0;
+static unsigned pmem_param_set;
 static int __init pmem_size_setup(char *p)
 {
 	pmem_size = memparse(p, NULL);
@@ -417,13 +424,11 @@ static struct android_pmem_platform_data android_pmem_adsp_pdata = {
 	.cached = 0,
 	.memory_type = MEMTYPE_EBI1,
 };
-
 static struct platform_device android_pmem_adsp_device = {
 	.name = "android_pmem",
 	.id = 2,
 	.dev = { .platform_data = &android_pmem_adsp_pdata },
 };
-#endif
 
 static struct android_pmem_platform_data android_pmem_audio_pdata = {
 	.name = "pmem_audio",
@@ -437,7 +442,8 @@ static struct platform_device android_pmem_audio_device = {
 	.id = 4,
 	.dev = { .platform_data = &android_pmem_audio_pdata },
 };
-#endif
+#endif /*CONFIG_MSM_MULTIMEDIA_USE_ION*/
+#endif /*CONFIG_ANDROID_PMEM*/
 
 struct fmem_platform_data fmem_pdata = {
 };
@@ -491,18 +497,27 @@ static void __init size_pmem_devices(void)
 #ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
 	android_pmem_adsp_pdata.size = pmem_adsp_size;
 
-	if (!pmem_param_set && machine_is_msm8960_liquid())
-		pmem_size = MSM_LIQUID_PMEM_SIZE;
+	if (!pmem_param_set) {
+		if (machine_is_msm8960_liquid())
+			pmem_size = MSM_LIQUID_PMEM_SIZE;
+		if (msm8960_hdmi_as_primary_selected())
+			pmem_size = MSM_HDMI_PRIM_PMEM_SIZE;
+	}
+
 	android_pmem_pdata.size = pmem_size;
-#endif
 	android_pmem_audio_pdata.size = MSM_PMEM_AUDIO_SIZE;
-#endif
+#endif /*CONFIG_MSM_MULTIMEDIA_USE_ION*/
+#endif /*CONFIG_ANDROID_PMEM*/
 }
 
+#ifdef CONFIG_ANDROID_PMEM
+#ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
 static void __init reserve_memory_for(struct android_pmem_platform_data *p)
 {
 	msm8960_reserve_table[p->memory_type].size += p->size;
 }
+#endif /*CONFIG_MSM_MULTIMEDIA_USE_ION*/
+#endif /*CONFIG_ANDROID_PMEM*/
 
 static void __init reserve_pmem_memory(void)
 {
@@ -510,14 +525,10 @@ static void __init reserve_pmem_memory(void)
 #ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
 	reserve_memory_for(&android_pmem_adsp_pdata);
 	reserve_memory_for(&android_pmem_pdata);
-#endif
 	reserve_memory_for(&android_pmem_audio_pdata);
-	msm8960_reserve_table[MEMTYPE_EBI1].size += pmem_kernel_ebi1_size;
 #endif
-}
-
-static void __init reserve_fmem_memory(void)
-{
+	msm8960_reserve_table[MEMTYPE_EBI1].size += msm_contig_mem_size;
+#endif
 }
 
 static int msm8960_paddr_to_memtype(unsigned int paddr)
@@ -525,29 +536,53 @@ static int msm8960_paddr_to_memtype(unsigned int paddr)
 	return MEMTYPE_EBI1;
 }
 
+#define FMEM_ENABLED 0
+
 #ifdef CONFIG_ION_MSM
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 static struct ion_cp_heap_pdata cp_mm_ion_pdata = {
 	.permission_type = IPT_TYPE_MM_CARVEOUT,
-	.align = PAGE_SIZE,
+	.align = SZ_64K,
+	.reusable = FMEM_ENABLED,
+	.mem_is_fmem = FMEM_ENABLED,
+	.fixed_position = FIXED_MIDDLE,
+	.iommu_map_all = 1,
+	.iommu_2x_map_domain = VIDEO_DOMAIN,
 };
 
 static struct ion_cp_heap_pdata cp_mfc_ion_pdata = {
 	.permission_type = IPT_TYPE_MFC_SHAREDMEM,
 	.align = PAGE_SIZE,
+	.reusable = 0,
+	.mem_is_fmem = FMEM_ENABLED,
+	.fixed_position = FIXED_HIGH,
 };
 
 static struct ion_co_heap_pdata co_ion_pdata = {
 	.adjacent_mem_id = INVALID_HEAP_ID,
 	.align = PAGE_SIZE,
+	.mem_is_fmem = 0,
 };
 
 static struct ion_co_heap_pdata fw_co_ion_pdata = {
 	.adjacent_mem_id = ION_CP_MM_HEAP_ID,
 	.align = SZ_128K,
+	.mem_is_fmem = FMEM_ENABLED,
+	.fixed_position = FIXED_LOW,
 };
 #endif
 
+/**
+ * These heaps are listed in the order they will be allocated. Due to
+ * video hardware restrictions and content protection the FW heap has to
+ * be allocated adjacent (below) the MM heap and the MFC heap has to be
+ * allocated after the MM heap to ensure MFC heap is not more than 256MB
+ * away from the base address of the FW heap.
+ * However, the order of FW heap and MM heap doesn't matter since these
+ * two heaps are taken care of by separate code to ensure they are adjacent
+ * to each other.
+ * Don't swap the order unless you know what you are doing!
+ */
 static struct ion_platform_data ion_pdata = {
 	.nr = MSM_ION_HEAP_NUM,
 	.heaps = {
@@ -590,14 +625,6 @@ static struct ion_platform_data ion_pdata = {
 			.memory_type = ION_EBI_TYPE,
 			.extra_data = (void *) &co_ion_pdata,
 		},
-		{
-            .id = ION_CP_ROTATOR_HEAP_ID,
-            .type   = ION_HEAP_TYPE_CP,
-            .name   = ION_ROTATOR_HEAP_NAME,
-            .size   = MSM_ION_ROTATOR_SIZE,
-            .memory_type = ION_EBI_TYPE,
-            .extra_data = (void *) &cp_mm_ion_pdata,
-        },
 #endif
 		{
 			.id	= ION_IOMMU_HEAP_ID,
@@ -637,31 +664,227 @@ struct platform_device fmem_device = {
 	.dev = { .platform_data = &fmem_pdata },
 };
 
-static void reserve_ion_memory(void)
+static void __init adjust_mem_for_liquid(void)
+{
+	unsigned int i;
+
+	if (!pmem_param_set) {
+		if (machine_is_msm8960_liquid())
+			msm_ion_sf_size = MSM_LIQUID_ION_SF_SIZE;
+
+		if (msm8960_hdmi_as_primary_selected())
+			msm_ion_sf_size = MSM_HDMI_PRIM_ION_SF_SIZE;
+
+		if (machine_is_msm8960_liquid() ||
+			msm8960_hdmi_as_primary_selected()) {
+			for (i = 0; i < ion_pdata.nr; i++) {
+				if (ion_pdata.heaps[i].id == ION_SF_HEAP_ID) {
+					ion_pdata.heaps[i].size =
+						msm_ion_sf_size;
+					pr_debug("msm_ion_sf_size 0x%x\n",
+						msm_ion_sf_size);
+					break;
+				}
+			}
+		}
+	}
+}
+
+static void __init reserve_mem_for_ion(enum ion_memory_types mem_type,
+				      unsigned long size)
+{
+	msm8960_reserve_table[mem_type].size += size;
+}
+
+static void __init msm8960_reserve_fixed_area(unsigned long fixed_area_size)
+{
+#if defined(CONFIG_ION_MSM) && defined(CONFIG_MSM_MULTIMEDIA_USE_ION)
+	int ret;
+
+	if (fixed_area_size > MAX_FIXED_AREA_SIZE)
+		panic("fixed area size is larger than %dM\n",
+			MAX_FIXED_AREA_SIZE >> 20);
+
+	reserve_info->fixed_area_size = fixed_area_size;
+	reserve_info->fixed_area_start = MSM8960_FW_START;
+
+	ret = memblock_remove(reserve_info->fixed_area_start,
+		reserve_info->fixed_area_size);
+	BUG_ON(ret);
+#endif
+}
+
+/**
+ * Reserve memory for ION and calculate amount of reusable memory for fmem.
+ * We only reserve memory for heaps that are not reusable. However, we only
+ * support one reusable heap at the moment so we ignore the reusable flag for
+ * other than the first heap with reusable flag set. Also handle special case
+ * for video heaps (MM,FW, and MFC). Video requires heaps MM and MFC to be
+ * at a higher address than FW in addition to not more than 256MB away from the
+ * base address of the firmware. This means that if MM is reusable the other
+ * two heaps must be allocated in the same region as FW. This is handled by the
+ * mem_is_fmem flag in the platform data. In addition the MM heap must be
+ * adjacent to the FW heap for content protection purposes.
+ */
+static void __init reserve_ion_memory(void)
 {
 #if defined(CONFIG_ION_MSM) && defined(CONFIG_MSM_MULTIMEDIA_USE_ION)
 	unsigned int i;
+	unsigned int reusable_count = 0;
+	unsigned int fixed_size = 0;
+	unsigned int fixed_low_size, fixed_middle_size, fixed_high_size;
+	unsigned long fixed_low_start, fixed_middle_start, fixed_high_start;
 
-	if (!pmem_param_set && machine_is_msm8960_liquid()) {
-		msm_ion_cp_mm_size = MSM_LIQUID_ION_MM_SIZE;
-		for (i = 0; i < ion_pdata.nr; i++) {
-			if (ion_pdata.heaps[i].id == ION_CP_MM_HEAP_ID) {
-				ion_pdata.heaps[i].size = msm_ion_cp_mm_size;
-				pr_debug("msm_ion_cp_mm_size 0x%x\n",
-					msm_ion_cp_mm_size);
+	adjust_mem_for_liquid();
+	fmem_pdata.size = 0;
+	fmem_pdata.reserved_size_low = 0;
+	fmem_pdata.reserved_size_high = 0;
+	fmem_pdata.align = PAGE_SIZE;
+	fixed_low_size = 0;
+	fixed_middle_size = 0;
+	fixed_high_size = 0;
+
+	/* We only support 1 reusable heap. Check if more than one heap
+	 * is specified as reusable and set as non-reusable if found.
+	 */
+	for (i = 0; i < ion_pdata.nr; ++i) {
+		const struct ion_platform_heap *heap = &(ion_pdata.heaps[i]);
+
+		if (heap->type == ION_HEAP_TYPE_CP && heap->extra_data) {
+			struct ion_cp_heap_pdata *data = heap->extra_data;
+
+			reusable_count += (data->reusable) ? 1 : 0;
+
+			if (data->reusable && reusable_count > 1) {
+				pr_err("%s: Too many heaps specified as "
+					"reusable. Heap %s was not configured "
+					"as reusable.\n", __func__, heap->name);
+				data->reusable = 0;
+			}
+		}
+	}
+
+	for (i = 0; i < ion_pdata.nr; ++i) {
+		struct ion_platform_heap *heap = &(ion_pdata.heaps[i]);
+		int align = SZ_4K;
+		int iommu_map_all = 0;
+		int adjacent_mem_id = INVALID_HEAP_ID;
+
+		if (heap->extra_data) {
+			int fixed_position = NOT_FIXED;
+			int mem_is_fmem = 0;
+
+			switch (heap->type) {
+			case ION_HEAP_TYPE_CP:
+				mem_is_fmem = ((struct ion_cp_heap_pdata *)
+					heap->extra_data)->mem_is_fmem;
+				fixed_position = ((struct ion_cp_heap_pdata *)
+					heap->extra_data)->fixed_position;
+				align = ((struct ion_cp_heap_pdata *)
+						heap->extra_data)->align;
+				iommu_map_all =
+					((struct ion_cp_heap_pdata *)
+					heap->extra_data)->iommu_map_all;
+				break;
+			case ION_HEAP_TYPE_CARVEOUT:
+				mem_is_fmem = ((struct ion_co_heap_pdata *)
+					heap->extra_data)->mem_is_fmem;
+				fixed_position = ((struct ion_co_heap_pdata *)
+					heap->extra_data)->fixed_position;
+				adjacent_mem_id = ((struct ion_co_heap_pdata *)
+					heap->extra_data)->adjacent_mem_id;
+				break;
+			default:
+				break;
+			}
+
+			if (iommu_map_all) {
+				if (heap->size & (SZ_64K-1)) {
+					heap->size = ALIGN(heap->size, SZ_64K);
+					pr_info("Heap %s not aligned to 64K. Adjusting size to %x\n",
+						heap->name, heap->size);
+				}
+			}
+
+			if (mem_is_fmem && adjacent_mem_id != INVALID_HEAP_ID)
+				fmem_pdata.align = align;
+
+			if (fixed_position != NOT_FIXED)
+				fixed_size += heap->size;
+			else
+				reserve_mem_for_ion(MEMTYPE_EBI1, heap->size);
+
+			if (fixed_position == FIXED_LOW)
+				fixed_low_size += heap->size;
+			else if (fixed_position == FIXED_MIDDLE)
+				fixed_middle_size += heap->size;
+			else if (fixed_position == FIXED_HIGH)
+				fixed_high_size += heap->size;
+
+			if (mem_is_fmem)
+				fmem_pdata.size += heap->size;
+		}
+	}
+
+	if (!fixed_size)
+		return;
+
+	if (fmem_pdata.size) {
+		fmem_pdata.reserved_size_low = fixed_low_size +
+							HOLE_SIZE;
+		fmem_pdata.reserved_size_high = fixed_high_size;
+	}
+
+	/* Since the fixed area may be carved out of lowmem,
+	 * make sure the length is a multiple of 1M.
+	 */
+	fixed_size = (fixed_size + MSM_MM_FW_SIZE + SECTION_SIZE - 1)
+		& SECTION_MASK;
+	msm8960_reserve_fixed_area(fixed_size);
+
+	fixed_low_start = MSM8960_FIXED_AREA_START;
+	fixed_middle_start = fixed_low_start + fixed_low_size + HOLE_SIZE;
+	fixed_high_start = fixed_middle_start + fixed_middle_size;
+
+	for (i = 0; i < ion_pdata.nr; ++i) {
+		struct ion_platform_heap *heap = &(ion_pdata.heaps[i]);
+
+		if (heap->extra_data) {
+			int fixed_position = NOT_FIXED;
+			struct ion_cp_heap_pdata *pdata = NULL;
+
+			switch (heap->type) {
+			case ION_HEAP_TYPE_CP:
+				pdata =
+				(struct ion_cp_heap_pdata *)heap->extra_data;
+				fixed_position = pdata->fixed_position;
+				break;
+			case ION_HEAP_TYPE_CARVEOUT:
+				fixed_position = ((struct ion_co_heap_pdata *)
+					heap->extra_data)->fixed_position;
+				break;
+			default:
+				break;
+			}
+
+			switch (fixed_position) {
+			case FIXED_LOW:
+				heap->base = fixed_low_start;
+				break;
+			case FIXED_MIDDLE:
+				heap->base = fixed_middle_start;
+				pdata->secure_base = fixed_middle_start
+							- HOLE_SIZE;
+				pdata->secure_size = HOLE_SIZE + heap->size;
+				break;
+			case FIXED_HIGH:
+				heap->base = fixed_high_start;
+				break;
+			default:
 				break;
 			}
 		}
 	}
-	msm8960_reserve_table[MEMTYPE_EBI1].size += msm_ion_cp_mm_size;
-	msm8960_reserve_table[MEMTYPE_EBI1].size += MSM_ION_MM_FW_SIZE;
-	msm8960_reserve_table[MEMTYPE_EBI1].size += MSM_ION_MFC_SIZE;
-	msm8960_reserve_table[MEMTYPE_EBI1].size += MSM_ION_QSECOM_SIZE;
-	msm8960_reserve_table[MEMTYPE_EBI1].size += MSM_ION_AUDIO_SIZE;
-#ifndef CONFIG_MSM_IOMMU
-	msm8960_reserve_table[MEMTYPE_EBI1].size += MSM_ION_SF_SIZE;
-	msm8960_reserve_table[MEMTYPE_EBI1].size += MSM_ION_ROTATOR_SIZE;
-#endif
 #endif
 }
 
@@ -686,7 +909,7 @@ static struct platform_device msm_cache_dump_device = {
 
 #endif
 
-static void reserve_cache_dump_memory(void)
+static void __init reserve_cache_dump_memory(void)
 {
 #ifdef CONFIG_MSM_CACHE_DUMP
 	unsigned int spare;
@@ -713,7 +936,6 @@ static void __init msm8960_calculate_reserve_sizes(void)
 	size_pmem_devices();
 	reserve_pmem_memory();
 	reserve_ion_memory();
-	reserve_fmem_memory();
 	reserve_mdp_memory();
 	reserve_rtb_memory();
 	reserve_cache_dump_memory();
@@ -722,6 +944,7 @@ static void __init msm8960_calculate_reserve_sizes(void)
 static struct reserve_info msm8960_reserve_info __initdata = {
 	.memtype_reserve_table = msm8960_reserve_table,
 	.calculate_reserve_sizes = msm8960_calculate_reserve_sizes,
+	.reserve_fixed_area = msm8960_reserve_fixed_area,
 	.paddr_to_memtype = msm8960_paddr_to_memtype,
 };
 
@@ -738,6 +961,8 @@ static void __init locate_unstable_memory(void)
 	unsigned long low, high;
 
 	bank_size = msm8960_memory_bank_size();
+	msm8960_reserve_info.bank_size = bank_size;
+
 	low = meminfo.bank[0].start;
 	high = mb->start + mb->size;
 
@@ -745,27 +970,37 @@ static void __init locate_unstable_memory(void)
 	if (high < mb->start)
 		high = ~0UL;
 
+	if (high < MAX_FIXED_AREA_SIZE + MSM8960_FIXED_AREA_START)
+		panic("fixed area extends beyond end of memory\n");
+
 	low &= ~(bank_size - 1);
 
 	if (high - low <= bank_size)
-		return;
+		goto no_dmm;
+
+#ifdef CONFIG_ENABLE_DMM
 	msm8960_reserve_info.low_unstable_address = low + bank_size;
 	msm8960_reserve_info.max_unstable_size = (mb->start - low) +
 						mb->size - bank_size;
-
-	msm8960_reserve_info.bank_size = bank_size;
 	pr_info("low unstable address %lx max size %lx bank size %lx\n",
 		msm8960_reserve_info.low_unstable_address,
 		msm8960_reserve_info.max_unstable_size,
 		msm8960_reserve_info.bank_size);
+	return;
+#endif
+no_dmm:
+	msm8960_reserve_info.low_unstable_address = high;
+	msm8960_reserve_info.max_unstable_size = 0;
 }
 
 static void __init place_movable_zone(void)
 {
+#ifdef CONFIG_ENABLE_DMM
 	movable_reserved_start = msm8960_reserve_info.low_unstable_address;
 	movable_reserved_size = msm8960_reserve_info.max_unstable_size;
 	pr_info("movable zone start %lx size %lx\n",
 		movable_reserved_start, movable_reserved_size);
+#endif
 }
 #endif
 
@@ -778,10 +1013,43 @@ static void __init elite_early_memory(void)
 #endif
 }
 
+static char prim_panel_name[PANEL_NAME_MAX_LEN];
+static char ext_panel_name[PANEL_NAME_MAX_LEN];
+static int __init prim_display_setup(char *param)
+{
+	if (strnlen(param, PANEL_NAME_MAX_LEN))
+		strlcpy(prim_panel_name, param, PANEL_NAME_MAX_LEN);
+	return 0;
+}
+early_param("prim_display", prim_display_setup);
+
+static int __init ext_display_setup(char *param)
+{
+	if (strnlen(param, PANEL_NAME_MAX_LEN))
+		strlcpy(ext_panel_name, param, PANEL_NAME_MAX_LEN);
+	return 0;
+}
+early_param("ext_display", ext_display_setup);
+
 static void __init elite_reserve(void)
 {
+	msm8960_set_display_params(prim_panel_name, ext_panel_name);
 	msm_reserve();
+	if (fmem_pdata.size) {
+#if defined(CONFIG_ION_MSM) && defined(CONFIG_MSM_MULTIMEDIA_USE_ION)
+		if (reserve_info->fixed_area_size) {
+			fmem_pdata.phys =
+				reserve_info->fixed_area_start + MSM_MM_FW_SIZE;
+			pr_info("mm fw at %lx (fixed) size %x\n",
+				reserve_info->fixed_area_start, MSM_MM_FW_SIZE);
+			pr_info("fmem start %lx (fixed) size %lx\n",
+				fmem_pdata.phys,
+				fmem_pdata.size);
+		}
+#endif
+	}
 }
+
 static int msm8960_change_memory_power(u64 start, u64 size,
 	int change_type)
 {
@@ -4372,7 +4640,6 @@ static struct msm_spm_seq_entry msm_spm_l2_seq_list[] __initdata = {
 	},
 };
 
-
 static struct msm_spm_platform_data msm_spm_l2_data[] __initdata = {
 	[0] = {
 		.reg_base_addr = MSM_SAW_L2_BASE,
@@ -4472,9 +4739,9 @@ static struct cyttsp_platform_data cyttsp_pdata = {
 	.gest_set = CY_GEST_GRP1 | CY_GEST_GRP2 |
 				CY_GEST_GRP3 | CY_GEST_GRP4 |
 				CY_ACT_DIST,
-	.act_intrvl = CY_ACT_INTRVL_DFLT,
-	.tch_tmout = CY_TCH_TMOUT_DFLT,
-	.lp_intrvl = CY_LP_INTRVL_DFLT,
+	.act_intrvl = 10,
+	.tch_tmout = 200,
+	.lp_intrvl = 30,
 	.sleep_gpio = CYTTSP_TS_SLEEP_GPIO,
 	.resout_gpio = CYTTSP_TS_RESOUT_N_GPIO,
 	.irq_gpio = CYTTSP_TS_GPIO_IRQ,
@@ -4917,8 +5184,8 @@ static struct platform_device *common_devices[] __initdata = {
 #ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
 	&android_pmem_device,
 	&android_pmem_adsp_device,
-#endif
 	&android_pmem_audio_device,
+#endif
 #endif
 	&msm_device_vidc,
 	&msm_device_bam_dmux,

@@ -41,7 +41,7 @@ extern int msm_pm8921_regulator_pdata_len __devinitdata;
 
 #define GPIO_VREG_ID_EXT_5V		0
 #define GPIO_VREG_ID_EXT_L2		1
-#define GPIO_VREG_ID_EXT_3P3V           2
+#define GPIO_VREG_ID_EXT_3P3V		2
 #define GPIO_VREG_ID_EXT_OTG_SW		3
 
 #define PMGPIO(x) (x)
@@ -295,6 +295,8 @@ extern struct rpm_regulator_platform_data msm_rpm_regulator_pdata __devinitdata;
 void msm8960_init_fb(void);
 void elite_allocate_fb_regions(void);
 void msm8960_init_mmc(void);
+unsigned char msm8960_hdmi_as_primary_selected(void);
+void msm8960_set_display_params(char *prim_panel, char *ext_panel);
 
 void elite_lcd_id_power(int pull);
 
