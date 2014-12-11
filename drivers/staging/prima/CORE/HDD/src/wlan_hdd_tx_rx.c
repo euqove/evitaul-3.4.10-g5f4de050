@@ -181,6 +181,8 @@ static VOS_STATUS hdd_flush_tx_queues( hdd_adapter_t *pAdapter )
    skb_list_node_t *pktNode = NULL;
    struct sk_buff *skb = NULL;
 
+   pAdapter->isVosLowResource = VOS_FALSE;
+
    while (++i != NUM_TX_QUEUES) 
    {
       //Free up any packets in the Tx queue
@@ -518,14 +520,14 @@ fail:
    return NETDEV_TX_OK;
 }
 /**============================================================================
-  @brief hdd_hard_start_xmit() - Function registered with the Linux OS for 
+  @brief hdd_hard_start_xmit() - Function registered with the Linux OS for
   transmitting packets. There are 2 versions of this function. One that uses
   locked queue and other that uses lockless queues. Both have been retained to
   do some performance testing
 
   @param skb      : [in]  pointer to OS packet (sk_buff)
   @param dev      : [in] pointer to Libra network device
-  
+
   @return         : NET_XMIT_DROP if packets are dropped
                   : NET_XMIT_SUCCESS if packet is enqueued succesfully
   ===========================================================================*/
@@ -546,10 +548,16 @@ int hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
    ++pAdapter->hdd_stats.hddTxRxStats.txXmitCalled;
 
+   if (unlikely(netif_queue_stopped(dev))) {
+       VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_WARN,
+                  "%s is called when netif TX is disabled", __func__);
+       return NETDEV_TX_BUSY;
+   }
+
    //Get TL AC corresponding to Qdisc queue index/AC.
    ac = hdd_QdiscAcToTlAC[skb->queue_mapping];
 
-   //user priority from IP header, which is already extracted and set from 
+   //user priority from IP header, which is already extracted and set from
    //select_queue call back function
    up = skb->priority;
 
@@ -583,13 +591,29 @@ int hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
       txSuspended = VOS_TRUE;
    }
 
-   spin_unlock(&pAdapter->wmm_tx_queue[ac].lock);      
+   /* If 3/4th of the max queue size is used then enable the flag.
+    * This flag indicates to place the DHCP packets in VOICE AC queue.*/
+   if (WLANTL_AC_BE == ac)
+   {
+      if (pAdapter->wmm_tx_queue[ac].count >= HDD_TX_QUEUE_LOW_WATER_MARK)
+      {
+          VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_WARN,
+                     "%s: Best Effort AC Tx queue is 3/4th full", __func__);
+          pAdapter->isVosLowResource = VOS_TRUE;
+      }
+      else
+      {
+          pAdapter->isVosLowResource = VOS_FALSE;
+      }
+   }
+
+   spin_unlock(&pAdapter->wmm_tx_queue[ac].lock);
    if (VOS_TRUE == txSuspended)
    {
        VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,
-                  "%s: TX queue full for AC=%d Disable OS TX queue", 
+                  "%s: TX queue full for AC=%d Disable OS TX queue",
                   __func__, ac );
-      return NETDEV_TX_BUSY;   
+      return NETDEV_TX_BUSY;
    }
 
    //Use the skb->cb field to hold the list node information
@@ -598,7 +622,7 @@ int hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
    //Stick the OS packet inside this node.
    pktNode->skb = skb;
 
-   //Stick the User Priority inside this node 
+   //Stick the User Priority inside this node
    pktNode->userPriority = up;
 
 
@@ -623,7 +647,7 @@ int hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
    ++pAdapter->hdd_stats.hddTxRxStats.txXmitQueuedAC[ac];
 
    //Make sure we have access to this access category
-   if (likely(pAdapter->hddWmmStatus.wmmAcStatus[ac].wmmAcAccessAllowed) || 
+   if (likely(pAdapter->hddWmmStatus.wmmAcStatus[ac].wmmAcAccessAllowed) ||
            ( pHddStaCtx->conn_info.uIsAuthenticated == VOS_FALSE))
    {
       granted = VOS_TRUE;
@@ -671,27 +695,12 @@ int hdd_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
   ===========================================================================*/
 void hdd_tx_timeout(struct net_device *dev)
 {
-   hdd_adapter_t *pAdapter = WLAN_HDD_GET_PRIV_PTR(dev);
-   tHalHandle hHal = WLAN_HDD_GET_HAL_CTX(pAdapter);
-
    VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
       "%s: Transmission timeout occurred", __func__);
    //Getting here implies we disabled the TX queues for too long. Queues are 
    //disabled either because of disassociation or low resource scenarios. In
    //case of disassociation it is ok to ignore this. But if associated, we have
    //do possible recovery here
-
-   //testing underlying data path stall
-   //FTM mode, data path is not initiated
-   if (VOS_FTM_MODE == hdd_get_conparam())
-   {
-      VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,
-         "%s: FTM mode, how initiated TX?", __func__);
-   }
-   else
-   {
-      sme_transportDebug(hHal, 0, 1);
-   }
 } 
 
 
@@ -725,6 +734,7 @@ VOS_STATUS hdd_init_tx_rx( hdd_adapter_t *pAdapter )
    v_SINT_t i = -1;
 
    pAdapter->isVosOutOfResource = VOS_FALSE;
+   pAdapter->isVosLowResource = VOS_FALSE;
 
    //vos_mem_zero(&pAdapter->stats, sizeof(struct net_device_stats));
    //Will be zeroed out during alloc
@@ -1353,7 +1363,8 @@ VOS_STATUS hdd_rx_packet_cbk( v_VOID_t *vosContext,
    pAdapter = pHddCtx->sta_to_adapter[staId];
    if( NULL == pAdapter )
    {
-      VOS_ASSERT(0);
+      VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_ERROR,"%s: pAdapter is Null for staId %u",
+                 __func__, staId);
       return VOS_STATUS_E_FAILURE;
    }
 
@@ -1410,8 +1421,9 @@ VOS_STATUS hdd_rx_packet_cbk( v_VOID_t *vosContext,
             VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO_MED,
                       "rx extract mac:" MAC_ADDRESS_STR,
                       MAC_ADDR_ARRAY(mac) );
-            curr_peer = wlan_hdd_tdls_find_peer(pAdapter, mac);
-            if ((NULL != curr_peer) && (eTDLS_LINK_CONNECTED == curr_peer->link_status))
+            curr_peer = wlan_hdd_tdls_find_peer(pAdapter, mac, TRUE);
+            if ((NULL != curr_peer) && (eTDLS_LINK_CONNECTED == curr_peer->link_status)
+                 && (TRUE == pRxMetaInfo->isStaTdls))
             {
                 wlan_hdd_tdls_increment_pkt_count(pAdapter, mac, 0);
                 VOS_TRACE( VOS_MODULE_ID_HDD, VOS_TRACE_LEVEL_INFO,"rssi is %d", pRxMetaInfo->rssiAvg);
@@ -1432,7 +1444,7 @@ VOS_STATUS hdd_rx_packet_cbk( v_VOID_t *vosContext,
       pAdapter->stats.rx_bytes += skb->len;
 #ifdef WLAN_OPEN_SOURCE
 #ifdef WLAN_FEATURE_HOLD_RX_WAKELOCK
-      wake_lock_timeout(&pHddCtx->rx_wake_lock, HDD_WAKE_LOCK_DURATION);
+      wake_lock_timeout(&pHddCtx->rx_wake_lock, msecs_to_jiffies(HDD_WAKE_LOCK_DURATION));
 #endif
 #endif
       rxstat = netif_rx_ni(skb);
