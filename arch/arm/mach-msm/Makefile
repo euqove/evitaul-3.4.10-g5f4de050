@@ -23,6 +23,7 @@ endif
 endif
 
 obj-y += acpuclock.o
+obj-$(CONFIG_HW_PERF_EVENTS) += perf_trace_counters.o
 obj-y += radio_feedback.o
 obj-$(CONFIG_ARCH_MSM7X27) += acpuclock-7627.o clock-pll.o
 obj-$(CONFIG_ARCH_MSM_SCORPIONMP) += perf_event_msm_l2.o

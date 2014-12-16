@@ -326,6 +326,48 @@ const struct mem_type *get_mem_type(unsigned int type)
 }
 EXPORT_SYMBOL(get_mem_type);
 
+#define PTE_SET_FN(_name, pteop) \
+static int pte_set_##_name(pte_t *ptep, pgtable_t token, unsigned long addr, \
+			void *data) \
+{ \
+	pte_t pte = pteop(*ptep); \
+\
+	set_pte_ext(ptep, pte, 0); \
+	return 0; \
+} \
+
+#define SET_MEMORY_FN(_name, callback) \
+int set_memory_##_name(unsigned long addr, int numpages) \
+{ \
+	unsigned long start = addr; \
+	unsigned long size = PAGE_SIZE*numpages; \
+	unsigned end = start + size; \
+\
+	if (start < MODULES_VADDR || start >= MODULES_END) \
+		return -EINVAL;\
+\
+	if (end < MODULES_VADDR || end >= MODULES_END) \
+		return -EINVAL; \
+\
+	apply_to_page_range(&init_mm, start, size, callback, NULL); \
+	flush_tlb_kernel_range(start, end); \
+	return 0;\
+}
+
+PTE_SET_FN(ro, pte_wrprotect)
+PTE_SET_FN(rw, pte_mkwrite)
+PTE_SET_FN(x, pte_mkexec)
+PTE_SET_FN(nx, pte_mknexec)
+
+SET_MEMORY_FN(ro, pte_set_ro)
+EXPORT_SYMBOL(set_memory_ro);
+SET_MEMORY_FN(rw, pte_set_rw)
+EXPORT_SYMBOL(set_memory_rw);
+SET_MEMORY_FN(x, pte_set_x)
+EXPORT_SYMBOL(set_memory_x);
+SET_MEMORY_FN(nx, pte_set_nx)
+EXPORT_SYMBOL(set_memory_nx);
+
 /*
  * Adjust the PMD section entries according to the CPU in use.
  */
@@ -625,39 +667,60 @@ static void __init alloc_init_pte(pmd_t *pmd, unsigned long addr,
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 }
 
-static void __init alloc_init_section(pud_t *pud, unsigned long addr,
+static void __init map_init_section(pmd_t *pmd, unsigned long addr,
+			unsigned long end, phys_addr_t phys,
+			const struct mem_type *type)
+{
+#ifndef CONFIG_ARM_LPAE
+	/*
+	 * In classic MMU format, puds and pmds are folded in to
+	 * the pgds. pmd_offset gives the PGD entry. PGDs refer to a
+	 * group of L1 entries making up one logical pointer to
+	 * an L2 table (2MB), where as PMDs refer to the individual
+	 * L1 entries (1MB). Hence increment to get the correct
+	 * offset for odd 1MB sections.
+	 * (See arch/arm/include/asm/pgtable-2level.h)
+	 */
+	if (addr & SECTION_SIZE)
+		pmd++;
+#endif
+	do {
+		*pmd = __pmd(phys | type->prot_sect);
+		phys += SECTION_SIZE;
+	} while (pmd++, addr += SECTION_SIZE, addr != end);
+
+	flush_pmd_entry(pmd);
+}
+
+static void __init alloc_init_pmd(pud_t *pud, unsigned long addr,
 				      unsigned long end, phys_addr_t phys,
 				      const struct mem_type *type)
 {
 	pmd_t *pmd = pmd_offset(pud, addr);
+	unsigned long next;
 
-	/*
-	 * Try a section mapping - end, addr and phys must all be aligned
-	 * to a section boundary.  Note that PMDs refer to the individual
-	 * L1 entries, whereas PGDs refer to a group of L1 entries making
-	 * up one logical pointer to an L2 table.
-	 */
-	if (type->prot_sect && ((addr | end | phys) & ~SECTION_MASK) == 0) {
-		pmd_t *p = pmd;
-
-#ifndef CONFIG_ARM_LPAE
-		if (addr & SECTION_SIZE)
-			pmd++;
-#endif
-
-		do {
-			*pmd = __pmd(phys | type->prot_sect);
-			phys += SECTION_SIZE;
-		} while (pmd++, addr += SECTION_SIZE, addr != end);
-
-		flush_pmd_entry(p);
-	} else {
+	do {
 		/*
-		 * No need to loop; pte's aren't interested in the
-		 * individual L1 entries.
+		 * With LPAE, we must loop over to map
+		 * all the pmds for the given range.
 		 */
-		alloc_init_pte(pmd, addr, end, __phys_to_pfn(phys), type);
-	}
+		next = pmd_addr_end(addr, end);
+
+		/*
+		 * Try a section mapping - addr, next and phys must all be
+		 * aligned to a section boundary.
+		 */
+		if (type->prot_sect &&
+				((addr | next | phys) & ~SECTION_MASK) == 0) {
+			map_init_section(pmd, addr, next, phys, type);
+		} else {
+			alloc_init_pte(pmd, addr, next,
+						__phys_to_pfn(phys), type);
+		}
+
+		phys += next - addr;
+
+	} while (pmd++, addr = next, addr != end);
 }
 
 static void __init alloc_init_pud(pgd_t *pgd, unsigned long addr,
@@ -668,7 +731,7 @@ static void __init alloc_init_pud(pgd_t *pgd, unsigned long addr,
 
 	do {
 		next = pud_addr_end(addr, end);
-		alloc_init_section(pud, addr, next, phys, type);
+		alloc_init_pmd(pud, addr, next, phys, type);
 		phys += next - addr;
 	} while (pud++, addr = next, addr != end);
 }
@@ -1320,8 +1383,6 @@ void mem_text_write_kernel_word(unsigned long *addr, unsigned long word)
 }
 EXPORT_SYMBOL(mem_text_write_kernel_word);
 
-extern char __init_data[];
-
 static void __init map_lowmem(void)
 {
 	struct memblock_region *reg;
@@ -1342,7 +1403,7 @@ static void __init map_lowmem(void)
 #ifdef CONFIG_STRICT_MEMORY_RWX
 		if (start <= __pa(_text) && __pa(_text) < end) {
 			map.length = SECTION_SIZE;
-			map.type = MT_MEMORY;
+			map.type = MT_MEMORY_RW;
 
 			create_mapping(&map);
 
@@ -1362,14 +1423,15 @@ static void __init map_lowmem(void)
 
 			map.pfn = __phys_to_pfn(__pa(__init_begin));
 			map.virtual = (unsigned long)__init_begin;
-			map.length = __init_data - __init_begin;
-			map.type = MT_MEMORY;
+			map.length = (char *)__arch_info_begin - __init_begin;
+			map.type = MT_MEMORY_RX;
 
 			create_mapping(&map);
 
-			map.pfn = __phys_to_pfn(__pa(__init_data));
-			map.virtual = (unsigned long)__init_data;
-			map.length = __phys_to_virt(end) - (unsigned int)__init_data;
+			map.pfn = __phys_to_pfn(__pa(__arch_info_begin));
+			map.virtual = (unsigned long)__arch_info_begin;
+			map.length = __phys_to_virt(end) -
+				(unsigned long)__arch_info_begin;
 			map.type = MT_MEMORY_RW;
 		} else {
 			map.length = end - start;
