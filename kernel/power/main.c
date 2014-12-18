@@ -875,6 +875,7 @@ static int __init pm_init(void)
 	tc_ev_timer.function = &tc_ev_stop;
 	tc_ev_processed = 1;
 
+
 	power_kobj = kobject_create_and_add("power", NULL);
 #ifdef CONFIG_PERFLOCK
 	perf_lock_init(&user_cpu_perf_lock, TYPE_PERF_LOCK, PERF_LOCK_HIGHEST, "User CPU Highest Perflock"); 
