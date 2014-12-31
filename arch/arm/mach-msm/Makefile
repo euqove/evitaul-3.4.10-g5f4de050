@@ -309,7 +309,7 @@ ifdef CONFIG_ARCH_APQ8064
 obj-$(CONFIG_ARCH_APQ8064) += acpuclock-8064.o acpuclock-krait.o acpuclock-krait-debug.o
 obj-$(CONFIG_MSM_CPU_PWRCTL) +=  msm_cpu_pwrctl.o
 else
-obj-$(CONFIG_ARCH_MSM8960) += acpuclock-8960.o
+obj-$(CONFIG_ARCH_MSM8960) += acpuclock-krait.o acpuclock-8960.o
 endif
 obj-$(CONFIG_ARCH_MSM8960) += memory_topology.o
 obj-$(CONFIG_ARCH_MSM8960) += saw-regulator.o

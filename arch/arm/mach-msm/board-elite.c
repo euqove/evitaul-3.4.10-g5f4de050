@@ -4586,6 +4586,39 @@ static struct msm_spm_platform_data msm_spm_l2_data[] __initdata = {
 	},
 };
 
+#ifdef CONFIG_PERFLOCK
+static unsigned msm8960_perf_acpu_table[] = {
+	594000000,
+	810000000,
+	1026000000,
+	1134000000,
+	1512000000,
+};
+
+static struct perflock_data msm8960_perflock_data = {
+	.perf_acpu_table = msm8960_perf_acpu_table,
+	.table_size = ARRAY_SIZE(msm8960_perf_acpu_table),
+};
+
+static struct perflock_data msm8960_cpufreq_ceiling_data = {
+	.perf_acpu_table = msm8960_perf_acpu_table,
+	.table_size = ARRAY_SIZE(msm8960_perf_acpu_table),
+};
+
+static struct perflock_pdata perflock_pdata = {
+	.perf_floor = &msm8960_perflock_data,
+	.perf_ceiling = &msm8960_cpufreq_ceiling_data,
+};
+
+struct platform_device msm8960_device_perf_lock = {
+	.name = "perf_lock",
+	.id = -1,
+	.dev = {
+		.platform_data = &perflock_pdata,
+	},
+};
+#endif
+
 #define CYTTSP_TS_GPIO_IRQ		11
 #define CYTTSP_TS_SLEEP_GPIO		50
 #define CYTTSP_TS_RESOUT_N_GPIO		52
