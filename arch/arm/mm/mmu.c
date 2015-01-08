@@ -969,11 +969,7 @@ static void __init fill_pmd_gaps(void)
 #endif
 
 static void * __initdata vmalloc_min =
-#if 0
 	(void *)(VMALLOC_END - (240 << 20) - VMALLOC_OFFSET);
-#else
-	(void *)(VMALLOC_END - CONFIG_VMALLOC_RESERVE - VMALLOC_OFFSET);
-#endif
 
 /*
  * vmalloc=size forces the vmalloc area to be exactly 'size'
